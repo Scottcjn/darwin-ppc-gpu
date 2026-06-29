@@ -39,7 +39,9 @@ SWAP SCOPE (resolved from amdgpu_fence.c): endianness is directional.
   it writes fences cpu_to_le32 (amdgpu_fence.c:68) and reads them le32_to_cpu (:85).
 So READ the VRAM sentinel with OSReadLittleInt32 (= le32_to_cpu) and 0x37 lands
 straight. Use an endian-asymmetric sentinel (0xDEADBEEF): with the LE accessor you
-should read 0xDEADBEEF; reading 0xEFBEADDE means a swap is double-applying.
+should read 0xDEADBEEF; reading 0xEFBEADDE means a swap is double-applying. Distinct rotations diagnose distinct
+bugs: 0xEFBEADDE = double dword-swap; 0xADDEEFBE (or another rotation) = byte-lane
+misalignment in the VRAM mapping. Distinct failure signatures beat a clean value.
 
 Everything else (dispatch, fences, IB chaining) builds on that one confirmation.
 
