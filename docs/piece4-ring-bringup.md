@@ -30,7 +30,17 @@ carries comprehensive latent BE support.
 ## First PM4 smoke test (sound)
 PACKET3(PACKET3_NOP, ...) then PACKET3(PACKET3_WRITE_DATA=0x37, ...) writing a
 known value to a known VRAM/GTT location, bump WPTR via doorbell, then poll that
-location from the host. If the value lands, the ring is live. Everything else
-(dispatch, fences, IB chaining) builds on that one confirmation.
+location from the host. If the value lands, the ring is live.
+
+SWAP SCOPE (resolved from amdgpu_fence.c): endianness is directional.
+- Inbound: BUF_SWAP swaps the CP's ring fetch, so the host writes NATIVE dwords via
+  amdgpu_ring_write (commands AND the WRITE_DATA payload ride the same path).
+- Outbound: the CP writes result memory as LITTLE-ENDIAN. amdgpu proves the contract:
+  it writes fences cpu_to_le32 (amdgpu_fence.c:68) and reads them le32_to_cpu (:85).
+So READ the VRAM sentinel with OSReadLittleInt32 (= le32_to_cpu) and 0x37 lands
+straight. Use an endian-asymmetric sentinel (0xDEADBEEF): with the LE accessor you
+should read 0xDEADBEEF; reading 0xEFBEADDE means a swap is double-applying.
+
+Everything else (dispatch, fences, IB chaining) builds on that one confirmation.
 
 Verified against torvalds/linux mainline amdgpu (2026-06).
