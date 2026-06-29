@@ -1,0 +1,16 @@
+{
+  "attestation": {
+    "agent_id": "bcn_c850ea702e8f",
+    "public_key": "a7a293c1481e8eed568bb210afa298785d1cf2a890a8f51035fbd4260eba79c6",
+    "beacon_commitment": "c5c1a0c915460100af88b327a5ed41fef7be9534548d40e879c07bbce8b7a855",
+    "content_sha256": "c5c1a0c915460100af88b327a5ed41fef7be9534548d40e879c07bbce8b7a855",
+    "data_type": "prior-art",
+    "title": "software emulation of device-issued PCIe atomics for ROCm HSA signaling on a no-atomics (PCIe Gen1) fabric",
+    "author": "Scott Boudreaux / Elyan Labs",
+    "repo": "https://github.com/Scottcjn/darwin-ppc-gpu/tree/main/pcie-atomic-shim",
+    "git_commit": "55d763d",
+    "date": "2026-06-29"
+  },
+  "signature_ed25519": "0c106ff24ad97c0201998a64a3ee47ec143826e9bdedd3050a7ae02107998a05a1fc54571742eaabedef3eb364030957e11d6855f23603869d0de14e685bc403",
+  "canonical": "json.dumps(sort_keys,separators=(',',':'))"
+}
