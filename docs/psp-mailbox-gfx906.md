@@ -13,7 +13,7 @@ WRONG in detail (hallucinated). Everything below is corrected against source:
 | mmMP0_SMN_C2PMSG_81 | 0x0091 | sOS / boot status (sol_reg) -- is firmware already resident |
 | mmMP0_SMN_C2PMSG_33 | 0x0061 | error status only (NOT the ready poll the AI claimed) |
 | mmMP0_SMN_C2PMSG_64 | 0x0080 | GPCOM ring control (ring create/stop, psp_v11_0.c:299) |
-| mmMP0_SMN_C2PMSG_101| 0x00A1 | ring control |
+| mmMP0_SMN_C2PMSG_101| 0x00A5 | ring control |
 
 ## Command buffer struct (VERIFIED, psp_gfx_if.h: struct psp_gfx_cmd_resp)
     +0  uint32 buf_size
