@@ -18,8 +18,14 @@ gfx_v9_0_cp_resume @3945, called in gfx_v9_0_hw_init @4026.)
 ## Endianness (VERIFIED + REVISED): hardware, not software
 gfx_v9_0.c:3409-3411 sets CP_RB0_CNTL.BUF_SWAP=1 under #ifdef __BIG_ENDIAN. The CP
 byteswaps ring fetches in hardware, so amdgpu_ring_write's raw native store is
-correct on BE WITH BUF_SWAP set. No per-dword cpu_to_le32 required. (Confirm
-BUF_SWAP granularity covers IB fetches too when we get there.)
+correct on BE WITH BUF_SWAP set. No per-dword cpu_to_le32 required.
+
+COMPUTE PATH (our MVP) has its OWN hardware swap: gfx_v9_0.c:3633 sets
+CP_HQD_PQ_CONTROL.ENDIAN_SWAP=1 under #ifdef __BIG_ENDIAN. So the compute
+queue/MQD endianness is a hardware bit too -- set ENDIAN_SWAP on the HQD and the CP
+swaps. gfx_v9_0.c has FOUR __BIG_ENDIAN swap sites total (gfx ring BUF_SWAP,
+compute HQD ENDIAN_SWAP, and two IB/RLC endian-mode fields) -- AMD's GFX engine
+carries comprehensive latent BE support.
 
 ## First PM4 smoke test (sound)
 PACKET3(PACKET3_NOP, ...) then PACKET3(PACKET3_WRITE_DATA=0x37, ...) writing a
