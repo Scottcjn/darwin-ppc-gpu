@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>        <string>ai.elyanlabs.ElyanMI50</string>
+    <key>CFBundleName</key>              <string>ElyanMI50</string>
+    <key>CFBundleVersion</key>           <string>0.1</string>
+    <key>CFBundlePackageType</key>       <string>KEXT</string>
+    <key>CFBundleSignature</key>         <string>????</string>
+    <key>OSBundleLibraries</key>
+    <dict>
+        <key>com.apple.kpi.iokit</key>   <string>9.0.0</string>
+        <key>com.apple.kpi.libkern</key> <string>9.0.0</string>
+        <key>com.apple.kpi.mach</key>    <string>9.0.0</string>
+    </dict>
+    <key>IOKitPersonalities</key>
+    <dict>
+        <key>ElyanMI50</key>
+        <dict>
+            <key>CFBundleIdentifier</key> <string>ai.elyanlabs.ElyanMI50</string>
+            <key>IOClass</key>            <string>ElyanMI50</string>
+            <key>IOProviderClass</key>    <string>IOPCIDevice</string>
+            <!-- Vega 20 family, AMD vendor 0x1002. MI50/MI60 = 0x66a1.
+                 Confirm YOUR card: 0x66a0/0x66a1/0x66a3/0x66a7/0x66af are all Vega 20. -->
+            <key>IOPCIMatch</key>         <string>0x66a11002</string>
+        </dict>
+    </dict>
+</dict>
+</plist>
