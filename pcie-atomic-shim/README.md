@@ -23,7 +23,7 @@ writes; the shim supplies the atomic *semantics* the HSA runtime expects.
 | mode | final signal | verdict | Mops/sec |
 |------|-------------:|---------|---------:|
 | NATIVE (Gen3+ PCIe atomics) | 0 | CORRECT | ~66 |
-| NAIVE  (Gen1, GPU just writes, no shim) | ~3.4M | CORRUPT (86% lost) | ~500 |
+| NAIVE  (Gen1, defined no-atomic-RMW model) | ~3.0M | CORRUPT (~76% lost) | ~500 |
 | SHIM   (Gen1 + this substrate) | 0 | CORRECT | ~20 |
 
 The NAIVE row is the wall: without atomics the plain writes race and lose most
@@ -34,6 +34,14 @@ updates. The SHIM row restores exact correctness on a no-atomics fabric.
 of magnitude beyond any inference workload. A matmul dispatch signals once; even
 10k dispatches/sec uses 0.05% of the shim's capacity. Signal-light workloads do
 not care that signaling got more expensive.
+
+## Scope of this proof (tri-brain hardened)
+Off-target on x86-64, this proves the SERIALIZATION PROTOCOL is correct and cheap.
+It does NOT prove (a) the big-endian wire format of the real target (both sides
+here are little-endian x86; the byteswap contract is encoded at `le64_wire`/
+`le64_host` but exercised as a no-op), nor (b) full HSA acquire/release/wait
+semantics. The NAIVE control uses defined relaxed atomics (load then store, no RMW
+atomicity), so its lost-update result is defined behavior, not UB.
 
 ## Honest boundary
 This proves the signaling PROTOCOL is correct and cheap, off-target. The remaining

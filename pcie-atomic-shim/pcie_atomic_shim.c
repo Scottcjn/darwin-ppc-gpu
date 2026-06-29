@@ -1,19 +1,24 @@
 /* pcie_atomic_shim.c -- software stand-in for device-issued PCIe atomics.
  *
- * The wall: ROCm's HSA signal model needs the GPU, as a PCIe requester, to issue
- * atomic read-modify-write to host memory. PCIe Gen1 (e.g. a Power Mac G5) cannot.
+ * Wall: ROCm's HSA signal model needs the GPU, as a PCIe requester, to issue
+ * atomic read-modify-write to host memory. PCIe Gen1 (Power Mac G5) cannot.
  *
- * The substrate: the GPU never issues an atomic. It posts a request (a plain,
- * ordered write the Gen1 link CAN route) into a per-queue SPSC mailbox. A single
- * host-side "completer" drains the mailboxes and performs the actual RMW. Because
- * exactly ONE agent ever touches the signal, atomicity comes from SERIALIZATION,
- * not from a hardware atomic op. This is the protocol that re-opens the HSA signal
- * layer on a fabric with no atomics.
+ * Substrate: the GPU never issues an atomic. It posts a request (a plain, ordered
+ * write the Gen1 link CAN route) into a per-queue SPSC mailbox. A single host-side
+ * completer drains the mailboxes and performs the RMW. One agent ever touches the
+ * signal, so atomicity comes from SERIALIZATION, not a hardware atomic op.
  *
- * This program proves three things off-target:
- *   NATIVE : device has PCIe atomics (Gen3+)  -> correct, fast   (baseline)
- *   NAIVE  : Gen1, GPU just writes, no shim    -> CORRUPT (lost updates: the wall)
- *   SHIM   : Gen1 + this substrate             -> correct, slower (amortized)
+ * SCOPE OF THIS PROOF (tri-brain hardened, Codex):
+ *   It proves the SERIALIZATION PROTOCOL is correct and cheap, off-target on x86-64.
+ *   It does NOT prove: (a) the big-endian wire format on the real target (both
+ *   sides here are little-endian x86), nor (b) full HSA acquire/release/wait
+ *   semantics. Those are identified, bounded, and NOT demonstrated here. The
+ *   byte-order contract is encoded below (le64_wire/le64_host) so the BE site is
+ *   explicit even though x86 exercises it as a no-op.
+ *
+ *   NATIVE : device has PCIe atomics (Gen3+)        -> correct, fast   (baseline)
+ *   NAIVE  : Gen1, separate non-atomic load+store    -> CORRUPT (lost updates: the wall)
+ *   SHIM   : Gen1 + this substrate                   -> correct, slower (amortized)
  */
 #define _GNU_SOURCE
 #include <stdio.h>
@@ -32,81 +37,92 @@ static inline void relax(void){ __asm__ __volatile__("" ::: "memory"); }
 static double now(void){ struct timespec t; clock_gettime(CLOCK_MONOTONIC,&t);
     return t.tv_sec + t.tv_nsec*1e-9; }
 
+/* Mailbox fields are LITTLE-ENDIAN WIRE FORMAT: the GPU (LE) posts; a BE host
+ * byteswaps on read. On x86 (LE) these are no-ops, so this proof does NOT exercise
+ * the BE path -- it only declares the contract at the right site. */
+static inline int64_t le64_wire(int64_t v){           /* producer (GPU) -> wire */
+#if defined(__BIG_ENDIAN__) || (defined(__BYTE_ORDER__) && __BYTE_ORDER__==__ORDER_BIG_ENDIAN__)
+    return (int64_t)__builtin_bswap64((uint64_t)v);
+#else
+    return v;
+#endif
+}
+static inline int64_t le64_host(int64_t v){ return le64_wire(v); } /* wire -> host (BE) */
+
 /* ---- per-producer SPSC mailbox (models a GPU queue's request ring) ---- */
 typedef struct {
-    int64_t operand;            /* plain stores by producer */
+    int64_t operand;            /* LE wire; plain stores by producer */
     _Atomic uint64_t valid;     /* producer RELEASE-publishes seq (the posted write) */
-    _Atomic int64_t  ret;       /* completer writes the old value */
+    _Atomic int64_t  ret;       /* completer writes old value */
     _Atomic uint64_t done;      /* completer RELEASE-marks processed */
 } slot_t;
 static slot_t   mbox[PRODUCERS][RING];
-static uint64_t ctail[PRODUCERS];           /* completer-owned tail per producer */
+static uint64_t ctail[PRODUCERS];
 
-/* the HSA-style signal. SHIM/NAIVE use the plain one; NATIVE uses the atomic one. */
-static int64_t          sig_plain;
-static _Atomic int64_t  sig_atomic;
-
-static int mode;                 /* 0 NATIVE, 1 NAIVE, 2 SHIM */
-static _Atomic long processed;   /* completer progress (SHIM) */
+static int64_t          sig_plain;        /* SHIM: only the completer touches it */
+static _Atomic int64_t  sig_atomic;       /* NATIVE: real atomic RMW */
+static _Atomic int64_t  sig_naive;        /* NAIVE: relaxed load+store, no RMW atomicity (DEFINED) */
+static int mode;
 
 static void* producer(void* arg){
-    long id = (long)arg;
-    uint64_t head = 0;
+    long id = (long)arg; uint64_t head = 0;
     for (long k=0; k<OPS_PER_PRODUCER; k++){
-        if (mode==0){                       /* NATIVE: real PCIe atomic */
+        if (mode==0){
             atomic_fetch_add_explicit(&sig_atomic, -1, memory_order_relaxed);
-        } else if (mode==1){                /* NAIVE: GPU plain RMW, no atomicity */
-            int64_t v = sig_plain; relax(); sig_plain = v - 1;
-        } else {                            /* SHIM: post to mailbox, completer does RMW */
+        } else if (mode==1){
+            /* DEFINED model of "no atomic RMW": relaxed load then relaxed store.
+             * No data race (atomic accesses), but concurrent producers lose updates. */
+            int64_t v = atomic_load_explicit(&sig_naive, memory_order_relaxed);
+            relax();
+            atomic_store_explicit(&sig_naive, v-1, memory_order_relaxed);
+        } else {
             slot_t* s = &mbox[id][head % RING];
             while (atomic_load_explicit(&s->valid, memory_order_acquire) != 0) relax();
-            s->operand = -1;                                   /* plain store */
+            s->operand = le64_wire(-1);                        /* LE wire store */
             atomic_store_explicit(&s->done, 0, memory_order_relaxed);
-            atomic_store_explicit(&s->valid, head+1, memory_order_release); /* publish */
+            atomic_store_explicit(&s->valid, head+1, memory_order_release);
             while (atomic_load_explicit(&s->done, memory_order_acquire)==0) relax();
-            atomic_store_explicit(&s->valid, 0, memory_order_release);       /* free slot */
+            atomic_store_explicit(&s->valid, 0, memory_order_release);
             head++;
         }
     }
     return NULL;
 }
 
-/* single host-side completer: the ONLY agent that touches the signal in SHIM mode */
 static void* completer(void* arg){
-    (void)arg;
-    long done_total = 0;
+    (void)arg; long done_total = 0;
     while (done_total < TOTAL){
         for (int p=0; p<PRODUCERS; p++){
             slot_t* s = &mbox[p][ctail[p] % RING];
             if (atomic_load_explicit(&s->valid, memory_order_acquire) == ctail[p]+1){
-                int64_t old = sig_plain;          /* sole writer -> no atomic needed */
-                sig_plain = old + s->operand;
+                int64_t op = le64_host(s->operand);   /* BE byteswap site (no-op on x86) */
+                int64_t old = sig_plain;              /* sole writer -> no atomic needed */
+                sig_plain = old + op;
                 atomic_store_explicit(&s->ret, old, memory_order_relaxed);
                 atomic_store_explicit(&s->done, 1, memory_order_release);
                 ctail[p]++; done_total++;
             }
         }
     }
-    atomic_store_explicit(&processed, done_total, memory_order_relaxed);
     return NULL;
 }
 
 static double run(int m, int64_t* final){
-    mode=m; sig_plain=TOTAL; atomic_store(&sig_atomic, TOTAL);
-    for (int p=0;p<PRODUCERS;p++){ ctail[p]=0; for(int i=0;i<RING;i++){ mbox[p][i].valid=0; } }
-    pthread_t prod[PRODUCERS], comp;
-    double t0=now();
-    if (m==2) pthread_create(&comp,NULL,completer,NULL);
-    for (long i=0;i<PRODUCERS;i++) pthread_create(&prod[i],NULL,producer,(void*)i);
+    mode=m; sig_plain=TOTAL; atomic_store(&sig_atomic,TOTAL); atomic_store(&sig_naive,TOTAL);
+    for (int p=0;p<PRODUCERS;p++){ ctail[p]=0; for(int i=0;i<RING;i++) mbox[p][i].valid=0; }
+    pthread_t prod[PRODUCERS], comp; double t0=now();
+    if (m==2 && pthread_create(&comp,NULL,completer,NULL)!=0){ perror("completer"); exit(2); }
+    for (long i=0;i<PRODUCERS;i++)
+        if (pthread_create(&prod[i],NULL,producer,(void*)i)!=0){ perror("producer"); exit(2); }
     for (int i=0;i<PRODUCERS;i++) pthread_join(prod[i],NULL);
     if (m==2) pthread_join(comp,NULL);
     double dt=now()-t0;
-    *final = (m==0)? atomic_load(&sig_atomic) : sig_plain;
+    *final = (m==0)? atomic_load(&sig_atomic) : (m==1)? atomic_load(&sig_naive) : sig_plain;
     return dt;
 }
 
 int main(void){
-    const char* name[]={"NATIVE (Gen3+ PCIe atomics)","NAIVE  (Gen1, no shim)","SHIM   (Gen1 + substrate)"};
+    const char* name[]={"NATIVE (Gen3+ PCIe atomics)","NAIVE  (Gen1, no atomic RMW)","SHIM   (Gen1 + substrate)"};
     printf("%d producers x %d ops, signal starts at %ld, correct final = 0\n\n",
            PRODUCERS, OPS_PER_PRODUCER, TOTAL);
     printf("%-30s %14s %12s %14s\n","mode","final signal","verdict","Mops/sec");
