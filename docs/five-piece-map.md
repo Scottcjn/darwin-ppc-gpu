@@ -5,7 +5,7 @@ Upstream sources are gfx906 / SOC15 / GFX9 generation.
 | # | Piece | Upstream source | Big-endian work |
 |---|-------|-----------------|-----------------|
 | 1 | ATOM POST | `atom.c`, `amdgpu_atombios.c` | byteswap the packed VBIOS-header struct reads; table reads already BE-safe |
-| 2 | HBM + GART/VM | `gmc_v9_0.c`, `gfxhub_v1_0.c`, `mmhub_v1_0.c`, `amdgpu_gart.c`, `amdgpu_vm.c` | page-table entry endianness; IOKit DMA |
+| 2 | HBM + GART/VM | `gmc_v9_0.c`, `gfxhub_v1_0.c`, `mmhub_v1_0.c`, `amdgpu_gart.c`, `amdgpu_vm_cpu.c` | VERIFIED: all PTE/PDE writes funnel through `amdgpu_gmc_set_pte_pde` -> `writeq`. Replicate `writeq` as `OSWriteLittleInt64`; value math is endian-neutral. (SDMA PTE path is separate, not in MVP.) IOKit coupling is the real cost, not endianness. |
 | 3 | PSP/SMU firmware | `psp_v11_0.c`, `amdgpu_psp.c`; power via legacy powerplay `vega20_smumgr.c` | PSP ring descriptor endianness; load blobs from kext bundle |
 | 4 | One compute queue | `gfx_v9_0.c`, `amdgpu_ring.c`, `vega20_ih.c` | ring buffer + WPTR/RPTR endianness; IOKit doorbell |
 | 5 | PM4 dispatch | gfx ring PM4 builders | PM4 packet word endianness |
