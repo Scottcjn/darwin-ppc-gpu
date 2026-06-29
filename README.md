@@ -22,6 +22,8 @@ host just builds command buffers and rings a doorbell.
 
 NVIDIA backport (nouveau lineage) tracked as a parallel effort.
 
+The `pcie-atomic-shim/` directory answers the PCIe-atomics question for Gen1 hosts: ROCm HSA signaling emulated via a host-mediated completer (atomicity by serialization), proven correct off-target.
+
 ## Piece 1 (this repo)
 
 `piece1-atom-post/` extracts AMD's MIT-licensed ATOM interpreter (`atom.c`) from
