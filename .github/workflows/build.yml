@@ -1,0 +1,59 @@
+name: portable pieces
+
+# This repo is PowerPC Darwin/XNU IOKit kext work (piece1-kext/, and the
+# real hardware bring-up documented under docs/). None of that can build or
+# run outside a Power Mac G5 with the 10.5 Kernel SDK, so it is intentionally
+# NOT covered here.
+#
+# Two pieces have zero IOKit/XNU/PowerPC dependency and are plain, portable C.
+# This workflow builds and runs exactly those two, on a stock Linux runner,
+# and checks the output each one's README documents.
+
+on:
+  push:
+    paths:
+      - 'piece1-atom-post/**'
+      - 'pcie-atomic-shim/**'
+      - '.github/workflows/build.yml'
+  pull_request:
+    paths:
+      - 'piece1-atom-post/**'
+      - 'pcie-atomic-shim/**'
+      - '.github/workflows/build.yml'
+
+jobs:
+  atom-post-interpreter:
+    name: piece1-atom-post (off-target ATOM interpreter)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: build
+        working-directory: piece1-atom-post
+        run: make
+      - name: run
+        working-directory: piece1-atom-post
+        run: ./atom_test | tee /tmp/atom_test.out
+      - name: check documented behavior (dummy BIOS fails magic check cleanly)
+        working-directory: piece1-atom-post
+        run: |
+          grep -q "Invalid BIOS magic" /tmp/atom_test.out
+          grep -q "OK: ATOM POST interpreter compiled, linked, and ran free of Linux/DRM." /tmp/atom_test.out
+
+  pcie-atomic-shim:
+    name: pcie-atomic-shim (off-target serialization proof)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: build
+        working-directory: pcie-atomic-shim
+        run: make
+      - name: run
+        working-directory: pcie-atomic-shim
+        run: ./shim | tee /tmp/shim.out
+      - name: check documented result (NATIVE + SHIM correct, NAIVE corrupt)
+        working-directory: pcie-atomic-shim
+        run: |
+          grep -q "NATIVE (Gen3+ PCIe atomics)" /tmp/shim.out
+          grep "NATIVE (Gen3+ PCIe atomics)" /tmp/shim.out | grep -q "CORRECT"
+          grep "NAIVE  (Gen1, no atomic RMW)" /tmp/shim.out | grep -q "CORRUPT"
+          grep "SHIM   (Gen1 + substrate)" /tmp/shim.out | grep -q "CORRECT"
