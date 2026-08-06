@@ -1,0 +1,11 @@
+darwin-ppc-gpu
+
+This repository is MIT licensed. See LICENSE.
+
+Third-party components redistributed here under their own terms:
+
+Portions Copyright (c) 2008 Advanced Micro Devices, Inc. and Red Hat, Inc.
+
+atom.c and the atombios headers are redistributed under the original MIT
+terms of Advanced Micro Devices, Inc. and Red Hat, Inc. Those notices are
+retained in the files themselves and are not superseded by LICENSE.
